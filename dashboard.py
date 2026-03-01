@@ -14,6 +14,30 @@ from db import load_runs, save_runs, get_latest_timestamp
 KM_TO_MI = 0.621371
 M_TO_FT  = 3.28084
 
+# ── Secret loader (works locally and on Streamlit Cloud) ───────────────────────
+import os as _os, tomllib as _tomllib, pathlib as _pathlib
+
+def _load_secret(key: str) -> str:
+    # 1. Try st.secrets (works on Streamlit Cloud and sometimes locally)
+    try:
+        v = st.secrets[key]
+        if v:
+            return str(v)
+    except Exception:
+        pass
+    # 2. Parse .streamlit/secrets.toml directly (reliable for local dev)
+    try:
+        _toml_path = _pathlib.Path(__file__).parent / ".streamlit" / "secrets.toml"
+        with open(_toml_path, "rb") as _f:
+            _raw = _tomllib.load(_f)
+        v = _raw.get(key, "")
+        if v:
+            return str(v)
+    except Exception:
+        pass
+    # 3. OS env var
+    return _os.environ.get(key, "")
+
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Strava Run Dashboard",
@@ -23,7 +47,7 @@ st.set_page_config(
 
 # ── Auth gate ──────────────────────────────────────────────────────────────────
 def _check_password() -> bool:
-    correct = st.secrets.get("APP_PASSWORD", "")
+    correct = _load_secret("APP_PASSWORD")
 
     if st.session_state.get("authenticated"):
         return True
@@ -62,6 +86,16 @@ def _check_password() -> bool:
 
 if not _check_password():
     st.stop()
+
+# Inject OpenAI key into env so agent.py can read it via os.environ
+_os.environ["OPENAI_API_KEY"] = _load_secret("OPENAI_API_KEY")
+
+# ── Session state defaults ──────────────────────────────────────────────────────
+st.session_state.setdefault("chat_history", [])
+st.session_state.setdefault("latest_run_analysis", None)
+st.session_state.setdefault("latest_run_name", None)
+st.session_state.setdefault("weekly_summary_text", None)
+st.session_state.setdefault("pending_ai_analysis", False)
 
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
@@ -136,6 +170,20 @@ if df_all.empty:
     st.error("No valid running data found.")
     st.stop()
 
+# ── Auto-analyze new run after a fresh sync ─────────────────────────────────────
+if st.session_state.get("pending_ai_analysis"):
+    st.session_state["pending_ai_analysis"] = False
+    if len(df_all) >= 2:
+        with st.spinner("🤖 AI Coach is analyzing your new run…"):
+            try:
+                from agent import analyze_run as _ai_analyze
+                _insight = _ai_analyze(df_all.iloc[-1], df_all.iloc[:-1])
+                st.session_state["latest_run_analysis"] = _insight
+                st.session_state["latest_run_name"] = df_all.iloc[-1].get("tooltip_name", "Latest Run")
+                st.toast("✅ AI analysis ready — check the AI Coach tab!", icon="🤖")
+            except Exception as _e:
+                st.warning(f"AI analysis failed: {_e}")
+
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.image("https://upload.wikimedia.org/wikipedia/commons/c/cb/Strava_Logo.svg", width=120)
@@ -161,6 +209,8 @@ with st.sidebar:
                 if added > 0:
                     st.success(f"✅ {added} new run{'s' if added != 1 else ''} synced!")
                     st.cache_data.clear()
+                    # Flag: analyze the newest run once fresh data loads
+                    st.session_state["pending_ai_analysis"] = True
                     st.rerun()
                 else:
                     st.info("Already up to date.")
@@ -229,8 +279,8 @@ k7.metric("Avg HR",          f"{avg_hr:.0f} bpm" if not np.isnan(avg_hr) else "N
 st.markdown("---")
 
 # ── Tabs ───────────────────────────────────────────────────────────────────────
-tab_insights, tab_ts, tab_pace, tab_dist, tab_hr, tab_elev, tab_cal, tab_yoy, tab_log = st.tabs([
-    "🔍 Insights", "📈 Time Series", "⚡ Pace", "📏 Distance", "❤️ Heart Rate",
+tab_ai, tab_insights, tab_ts, tab_pace, tab_dist, tab_hr, tab_elev, tab_cal, tab_yoy, tab_log = st.tabs([
+    "🤖 AI Coach", "🔍 Insights", "📈 Time Series", "⚡ Pace", "📏 Distance", "❤️ Heart Rate",
     "⛰️ Elevation", "📅 Calendar", "📊 Year vs Year", "📋 Run Log"
 ])
 
@@ -239,7 +289,105 @@ BLUE   = "#2D86C5"
 GREEN  = "#27AE60"
 
 # ════════════════════════════════════════════════════════════════════════════════
-# TAB 0 – INSIGHTS
+# TAB 0 – AI COACH
+# ════════════════════════════════════════════════════════════════════════════════
+with tab_ai:
+    from agent import analyze_run as _analyze_run, weekly_summary as _weekly_summary, chat as _ai_chat
+
+    has_key = bool(_load_secret("OPENAI_API_KEY"))
+    if not has_key:
+        st.info(
+            "**Enable AI Coach:** Add your OpenAI key to `.streamlit/secrets.toml`:\n\n"
+            "```toml\nOPENAI_API_KEY = \"sk-...\"\n```\n\n"
+            "Then add the same key to Streamlit Cloud secrets for the deployed app.",
+            icon="🔑",
+        )
+
+    st.markdown("### 🤖 AI Running Coach")
+    st.caption(
+        "Powered by GPT-4o mini · Your running history is sent as context — no personal info leaves your account."
+    )
+
+    col_run, col_week = st.columns(2)
+
+    # ── Latest run analysis ──────────────────────────────────────────────────
+    with col_run:
+        st.markdown("#### 🏃 Latest Run Analysis")
+
+        latest = df.iloc[-1] if not df.empty else None
+        if latest is not None:
+            st.caption(
+                f"**{latest.get('tooltip_name','Run')}** · "
+                f"{latest['distance_mi']:.2f} mi · "
+                f"{latest['pace_label']} · "
+                f"{latest['duration_label']}"
+            )
+
+        if st.session_state.get("latest_run_analysis"):
+            run_label = st.session_state.get("latest_run_name", "Latest Run")
+            st.success(f"Analysis for: **{run_label}**", icon="✅")
+            st.markdown(st.session_state["latest_run_analysis"])
+            if st.button("🔄 Re-analyze", key="reanalyze_btn"):
+                with st.spinner("Analyzing…"):
+                    result = _analyze_run(df.iloc[-1], df.iloc[:-1])
+                st.session_state["latest_run_analysis"] = result
+                st.session_state["latest_run_name"] = df.iloc[-1].get("tooltip_name", "Latest Run")
+                st.rerun()
+        else:
+            if latest is not None and st.button(
+                "🔍 Analyze Latest Run", type="primary", key="analyze_latest_btn"
+            ):
+                with st.spinner("AI Coach is analyzing your run…"):
+                    result = _analyze_run(df.iloc[-1], df.iloc[:-1])
+                st.session_state["latest_run_analysis"] = result
+                st.session_state["latest_run_name"] = df.iloc[-1].get("tooltip_name", "Latest Run")
+                st.rerun()
+            else:
+                st.info("Sync a new run or click **Analyze Latest Run** to get AI feedback.")
+
+    # ── Weekly summary ───────────────────────────────────────────────────────
+    with col_week:
+        st.markdown("#### 📅 Weekly Coach Summary")
+        if st.button("Generate Weekly Summary", type="secondary", key="weekly_sum_btn"):
+            with st.spinner("Summarizing your week…"):
+                summary = _weekly_summary(df)
+            st.session_state["weekly_summary_text"] = summary
+
+        if st.session_state.get("weekly_summary_text"):
+            st.markdown(st.session_state["weekly_summary_text"])
+        else:
+            st.info("Click **Generate Weekly Summary** for a training load review and next-week recommendations.")
+
+    st.markdown("---")
+
+    # ── Chat interface ───────────────────────────────────────────────────────
+    st.markdown("#### 💬 Chat with Your Data")
+    st.caption(
+        "Ask anything: *'Am I overtraining?'  ·  'What's my fastest 10K?'  ·  "
+        "'When do I run best — morning or evening?'  ·  'Build me a 5K plan.'*"
+    )
+
+    for msg in st.session_state["chat_history"]:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    if question := st.chat_input("Ask your AI coach anything…", key="coach_chat_input"):
+        with st.chat_message("user"):
+            st.markdown(question)
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking…"):
+                answer = _ai_chat(question, df, st.session_state["chat_history"])
+            st.markdown(answer)
+        st.session_state["chat_history"].append({"role": "user",      "content": question})
+        st.session_state["chat_history"].append({"role": "assistant", "content": answer})
+
+    if st.session_state["chat_history"]:
+        if st.button("🗑️ Clear conversation", key="clear_chat_btn"):
+            st.session_state["chat_history"] = []
+            st.rerun()
+
+# ════════════════════════════════════════════════════════════════════════════════
+# TAB 1 – INSIGHTS
 # ════════════════════════════════════════════════════════════════════════════════
 with tab_insights:
 

@@ -1,5 +1,6 @@
 matplotlib==3.10.8
 numpy==2.4.2
+openai==2.24.0
 pandas==2.3.3
 plotly==6.5.2
 python-dotenv==1.2.1
