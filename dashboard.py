@@ -21,6 +21,48 @@ st.set_page_config(
     layout="wide",
 )
 
+# ── Auth gate ──────────────────────────────────────────────────────────────────
+def _check_password() -> bool:
+    correct = st.secrets.get("APP_PASSWORD", "")
+
+    if st.session_state.get("authenticated"):
+        return True
+
+    st.markdown("""
+    <style>
+        .login-box {
+            max-width: 380px;
+            margin: 8rem auto 0;
+            padding: 2.5rem;
+            background: #1e1e2e;
+            border: 1px solid #333;
+            border-radius: 16px;
+            text-align: center;
+        }
+        .login-box h2 { color: #FC4C02; margin-bottom: 0.25rem; }
+        .login-box p  { color: #aaa; margin-bottom: 1.5rem; font-size: 0.9rem; }
+    </style>
+    <div class="login-box">
+        <h2>🏃 Strava Dashboard</h2>
+        <p>Enter your password to continue</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col = st.columns([1, 2, 1])[1]
+    with col:
+        pwd = st.text_input("Password", type="password", label_visibility="collapsed",
+                            placeholder="Enter password…")
+        if st.button("Login", use_container_width=True, type="primary"):
+            if pwd == correct:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Incorrect password.")
+    return False
+
+if not _check_password():
+    st.stop()
+
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
