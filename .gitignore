@@ -1,0 +1,20 @@
+# Secrets — never commit these
+.streamlit/secrets.toml
+
+# Python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# Data files (stored in Supabase now)
+strava_activities.csv
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
