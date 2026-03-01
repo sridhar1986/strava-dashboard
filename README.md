@@ -14,6 +14,21 @@ A personal running analytics dashboard built with Streamlit, powered by the Stra
 
 ---
 
+## Screenshots
+
+### Dashboard Overview — KPIs, Weekly Distance & Pace Trend
+![Overview](screenshots/overview.png)
+
+### Insights & Year-over-Year Comparison
+![Insights](screenshots/insights.png)
+
+### Activity Calendar Heatmap
+![Calendar](screenshots/calendar.png)
+
+> *All screenshots use synthetic data for illustration.*
+
+---
+
 ## Features
 
 ### 🔍 Insights

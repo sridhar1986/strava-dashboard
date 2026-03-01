@@ -11,6 +11,9 @@ __pycache__/
 # Data files (stored in Supabase now)
 strava_activities.csv
 
+# Dev utilities
+generate_mockups.py
+
 # IDE
 .idea/
 .vscode/
