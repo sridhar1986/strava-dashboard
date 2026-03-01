@@ -1,62 +1,81 @@
-# 🏃 Strava Run Dashboard
+# 🏃 Strava AI Run Coach
 
 ![Python](https://img.shields.io/badge/Python-3.13-blue?logo=python)
 ![Streamlit](https://img.shields.io/badge/Streamlit-1.54-FF4B4B?logo=streamlit)
+![OpenAI](https://img.shields.io/badge/AI-GPT--4o_mini-412991?logo=openai)
 ![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase)
 ![Plotly](https://img.shields.io/badge/Charts-Plotly-3D4DB7?logo=plotly)
 ![License](https://img.shields.io/badge/License-MIT-green)
 
-A personal running analytics dashboard built with Streamlit, powered by the Strava API and Supabase. Pulls your entire Strava history, stores it in a hosted database, and renders interactive charts across 9 analysis tabs — deployed as a live web app.
+A personal AI-powered running coach built on top of the Strava API. It pulls your full running history into a hosted database, renders interactive analytics across 9 tabs, and runs an **AI Coach** (GPT-4o mini) that analyses every new run, generates weekly training summaries, and answers natural-language questions about your data.
 
 **Live demo:** [strava-insights.streamlit.app](https://strava-insights.streamlit.app) *(password protected)*
 
 ---
 
----
-
 ## Screenshots
 
-### Dashboard Overview — KPIs, Weekly Distance & Pace Trend
+### 🤖 AI Coach — Run Analysis, Weekly Summary & Chat
+![AI Coach](screenshots/ai_coach.png)
+
+### 📊 Dashboard Overview — KPIs, Weekly Distance & Pace Trend
 ![Overview](screenshots/overview.png)
 
-### Insights & Year-over-Year Comparison
+### 🔍 Insights & Year-over-Year Comparison
 ![Insights](screenshots/insights.png)
 
-### Activity Calendar Heatmap
+### 📅 Activity Calendar Heatmap
 ![Calendar](screenshots/calendar.png)
 
 > *All screenshots use synthetic data for illustration.*
 
 ---
 
+## What makes it agentic?
+
+The **AI Coach** tab goes beyond hardcoded charts. It uses GPT-4o mini to:
+
+| Capability | What happens |
+|---|---|
+| **Auto run analysis** | Sync a new run → AI immediately compares it to your full history, flags PRs, spots concerns, and gives one concrete tip |
+| **Weekly summary** | One click → AI reviews this week's load vs your 4-week average and prescribes next week's training |
+| **Natural language chat** | Ask anything — *"Am I overtraining?" / "When is my best time of year?" / "Build me a 5K plan"* — it reasons over your real data |
+
+Your entire running history is passed as structured context on every call, so answers reference actual numbers — not generic advice.
+
+---
+
 ## Features
 
+### 🤖 AI Coach *(new)*
+GPT-4o mini analyses your runs using your full history as context. Auto-triggered on every sync. Includes a persistent chat interface where you can ask anything about your training.
+
 ### 🔍 Insights
-Auto-generated analysis of your entire running history — pace trends, consistency patterns, race fitness predictions, and personalized recommendations. Includes best race paces, gap analysis, and 3 actionable recommendations.
+Auto-generated analysis of your entire running history — pace trends, consistency patterns, race fitness predictions, and personalised recommendations.
 
 ### 📈 Time Series
-Weekly and monthly distance over time with interactive range selectors (3M / 6M / 1Y / All), 8-period rolling average, and a cumulative mileage area chart — all with a drag-to-zoom range slider.
+Weekly and monthly distance over time with interactive range selectors (3M / 6M / 1Y / All), 8-period rolling average, and a cumulative mileage area chart.
 
 ### ⚡ Pace
-Pace trend across every run with a 10-run rolling average, pace distribution histogram, and pace breakdown by day of week. Axes display real pace labels (e.g. `7:30 /mi`) instead of raw numbers.
+Pace trend across every run with a 10-run rolling average, pace distribution histogram, and breakdown by day of week. Axes display real pace labels (e.g. `7:30 /mi`).
 
 ### 📏 Distance
-Distance distribution with race-distance markers (5K / 10K / HM / FM), day-of-week box plots, and a bubble chart of every run sized and colored by pace.
+Distance distribution with race-distance markers (5K / 10K / HM / FM), day-of-week box plots, and a bubble chart of every run sized and coloured by pace.
 
 ### ❤️ Heart Rate
-HR over time with rolling average, HR vs pace scatter colored by distance, and HR distribution histogram.
+HR over time with rolling average, HR vs pace scatter coloured by distance, and HR distribution histogram.
 
 ### ⛰️ Elevation
 Monthly elevation gain bar chart, elevation vs distance scatter, and elevation distribution — all in feet.
 
 ### 📅 Calendar
-GitHub-style weekly activity heatmap per year (pick year from dropdown), plus a month-by-month bar chart with run counts labeled on each bar.
+GitHub-style weekly activity heatmap per year, plus a month-by-month bar chart with run counts.
 
 ### 📊 Year vs Year
 Four bar charts comparing each year: total miles, total runs, average pace, longest run. Includes a year × month heatmap across the full history.
 
 ### 📋 Run Log
-Full searchable/sortable table of every run (date, name, distance, pace, duration, HR, elevation) with a one-click CSV export.
+Full sortable table of every run (date, name, distance, pace, duration, HR, elevation) with one-click CSV export.
 
 ---
 
@@ -64,6 +83,7 @@ Full searchable/sortable table of every run (date, name, distance, pace, duratio
 
 | Layer | Technology |
 |---|---|
+| **AI Coach** | [OpenAI GPT-4o mini](https://platform.openai.com/) |
 | **Frontend** | [Streamlit](https://streamlit.io) |
 | **Charts** | [Plotly](https://plotly.com/python/) |
 | **Database** | [Supabase](https://supabase.com) (PostgreSQL) |
@@ -79,22 +99,29 @@ Full searchable/sortable table of every run (date, name, distance, pace, duratio
 Strava API
     │
     ▼
-strava.py          ← fetches activities via OAuth refresh token
+strava.py        ← fetches activities via OAuth refresh token
     │
     ▼
-db.py              ← upserts into Supabase (deduplicates by run ID)
+db.py            ← upserts into Supabase (deduplicates by run ID)
     │
     ▼
 Supabase (PostgreSQL)
     │
     ▼
-dashboard.py       ← Streamlit app reads from Supabase, renders charts
+dashboard.py     ← Streamlit app: reads data, renders charts
     │
-    ▼
-strava-insights.streamlit.app
+    ├── 9 analytics tabs (Plotly)
+    │
+    └── AI Coach tab
+            │
+            ▼
+        agent.py ← GPT-4o mini
+            ├── analyze_run(run, history)   → per-run insight
+            ├── weekly_summary(df)          → weekly training review
+            └── chat(question, df, history) → conversational Q&A
 ```
 
-**Sync flow:** Clicking "🔄 Sync New Runs" in the sidebar fetches only activities newer than the last saved run, upserts them into Supabase, clears the cache, and rerenders the full dashboard — typically a single API call.
+**Sync → AI flow:** Click "🔄 Sync New Runs" → new activities fetched from Strava → upserted into Supabase → AI Coach auto-analyses the latest run → insight appears in the AI Coach tab with a toast notification.
 
 ---
 
@@ -118,6 +145,8 @@ pip install -r requirements.txt
 Create `.streamlit/secrets.toml`:
 ```toml
 APP_PASSWORD         = "your-password"
+
+OPENAI_API_KEY       = "sk-proj-..."          # platform.openai.com/api-keys
 
 SUPABASE_URL         = "https://your-project.supabase.co"
 SUPABASE_KEY         = "your-anon-key"
@@ -159,11 +188,9 @@ CREATE TABLE IF NOT EXISTS runs (
 
 **5. Load your data**
 ```bash
-# Fetch all your Strava runs and push to Supabase
-python strava.py
-
-# Or migrate from an existing CSV
-python migrate.py
+python strava.py       # fetch all Strava runs → Supabase
+# or
+python migrate.py      # migrate from an existing CSV
 ```
 
 **6. Run the dashboard**
@@ -176,7 +203,7 @@ streamlit run dashboard.py
 ## Strava OAuth Setup
 
 1. Go to [strava.com/settings/api](https://www.strava.com/settings/api) and create an app
-2. Run `python reauth.py` — it opens a browser, you authorize, and it writes the refresh token to `strava.py` automatically
+2. Run `python reauth.py` — opens a browser, you authorise, refresh token is written automatically
 3. Copy the refresh token into your `secrets.toml`
 
 ---
@@ -185,31 +212,19 @@ streamlit run dashboard.py
 
 Deployed for free on [Streamlit Community Cloud](https://share.streamlit.io):
 
-1. Push to a GitHub repo (public or private)
+1. Push to GitHub (public or private)
 2. Connect at share.streamlit.io → select repo → set main file to `dashboard.py`
-3. Add secrets in Advanced Settings
+3. Add all secrets (including `OPENAI_API_KEY`) in **Settings → Secrets**
 4. Deploy — live in ~2 minutes
 
----
-
-## Adding Screenshots
-
-Take screenshots of the live app and save them to a `screenshots/` folder:
-
-```
-screenshots/
-  dashboard.png     ← full dashboard with KPI metrics
-  insights.png      ← insights tab
-  time_series.png   ← time series tab
-  calendar.png      ← calendar heatmap
-```
+OpenAI keys in Streamlit Cloud secrets are encrypted at rest and never exposed in logs.
 
 ---
 
-## What I Learned / Built
+## What I Built
 
-- End-to-end OAuth flow with the Strava API (token refresh, rate limit handling)
-- Incremental data sync — only fetches new activities, not the full history each time
+- End-to-end OAuth flow with the Strava API (token refresh, incremental sync)
 - Supabase as a lightweight free PostgreSQL backend for a personal project
+- Agentic AI layer: LLM reasoning over personal athletic data with full history as context
 - Streamlit for rapid data app development with interactive Plotly charts
-- Deploying a Python data app to the cloud with secret management
+- Secure secret management for local dev (`secrets.toml`) and cloud deployment
