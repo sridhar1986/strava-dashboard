@@ -8,11 +8,14 @@ import threading
 import webbrowser
 import urllib.parse
 import requests
-import streamlit as st
+import tomllib
 
-CLIENT_ID = st.secrets["STRAVA_CLIENT_ID"]
-CLIENT_SECRET = st.secrets["STRAVA_CLIENT_SECRET"]
-REFRESH_TOKEN = st.secrets["STRAVA_REFRESH_TOKEN"]
+with open(".streamlit/secrets.toml", "rb") as f:
+    secrets = tomllib.load(f)
+
+CLIENT_ID = secrets["STRAVA_CLIENT_ID"]
+CLIENT_SECRET = secrets["STRAVA_CLIENT_SECRET"]
+REFRESH_TOKEN = secrets["STRAVA_REFRESH_TOKEN"]
 REDIRECT_URI = "http://localhost:8765"
 SCOPE = "activity:read_all"
 
