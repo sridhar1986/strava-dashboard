@@ -8,9 +8,11 @@ import threading
 import webbrowser
 import urllib.parse
 import requests
+import streamlit as st
 
-CLIENT_ID = "157795"
-CLIENT_SECRET = "b6ae0a8b3d49e9e82e3dcd5a91ab406663a1d103"
+CLIENT_ID = st.secrets["STRAVA_CLIENT_ID"]
+CLIENT_SECRET = st.secrets["STRAVA_CLIENT_SECRET"]
+REFRESH_TOKEN = st.secrets["STRAVA_REFRESH_TOKEN"]
 REDIRECT_URI = "http://localhost:8765"
 SCOPE = "activity:read_all"
 
@@ -70,6 +72,8 @@ def main():
             "client_secret": CLIENT_SECRET,
             "code": auth_code,
             "grant_type": "authorization_code",
+            "refresh_token": STRAVA_REFRESH_TOKEN,
+
         }
     )
     response.raise_for_status()
