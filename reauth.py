@@ -1,6 +1,8 @@
 """
 Strava Re-Authorization Helper
-Run this once to get a fresh refresh_token, then paste it into strava.py.
+
+Run once to generate a new refresh_token.
+Then update STRAVA_REFRESH_TOKEN in Streamlit Secrets.
 """
 
 import http.server
@@ -10,63 +12,85 @@ import urllib.parse
 import requests
 import tomllib
 
+
+# Load secrets
 with open(".streamlit/secrets.toml", "rb") as f:
     secrets = tomllib.load(f)
 
 CLIENT_ID = secrets["STRAVA_CLIENT_ID"]
 CLIENT_SECRET = secrets["STRAVA_CLIENT_SECRET"]
-REFRESH_TOKEN = secrets["STRAVA_REFRESH_TOKEN"]
+
 REDIRECT_URI = "http://localhost:8765"
 SCOPE = "activity:read_all"
 
 auth_code = None
 
+
 class CallbackHandler(http.server.BaseHTTPRequestHandler):
+
     def do_GET(self):
         global auth_code
+
         parsed = urllib.parse.urlparse(self.path)
         params = urllib.parse.parse_qs(parsed.query)
+
         if "code" in params:
             auth_code = params["code"][0]
+
             self.send_response(200)
-            self.send_header("Content-type", "text/html")
+            self.send_header(
+                "Content-type",
+                "text/html"
+            )
             self.end_headers()
-            self.wfile.write(b"<h2>Authorization successful! You can close this tab.</h2>")
+
+            self.wfile.write(
+                b"<h2>Authorization successful. You can close this tab.</h2>"
+            )
         else:
             self.send_response(400)
             self.end_headers()
-            self.wfile.write(b"<h2>No code received.</h2>")
+            self.wfile.write(
+                b"<h2>No authorization code received.</h2>"
+            )
 
     def log_message(self, *args):
-        pass  # suppress request logs
+        pass
 
 
 def main():
+
     auth_url = (
-        f"https://www.strava.com/oauth/authorize"
+        "https://www.strava.com/oauth/authorize"
         f"?client_id={CLIENT_ID}"
-        f"&response_type=code"
+        "&response_type=code"
         f"&redirect_uri={REDIRECT_URI}"
-        f"&approval_prompt=force"
+        "&approval_prompt=force"
         f"&scope={SCOPE}"
     )
 
-    # Start local server to catch the callback
-    server = http.server.HTTPServer(("localhost", 8765), CallbackHandler)
-    thread = threading.Thread(target=server.handle_request)
+    server = http.server.HTTPServer(
+        ("localhost", 8765),
+        CallbackHandler
+    )
+
+    thread = threading.Thread(
+        target=server.handle_request
+    )
+
     thread.start()
 
-    print("Opening Strava authorization page in your browser …")
-    print(f"\nIf it doesn't open automatically, visit:\n{auth_url}\n")
+    print("Opening Strava authorization page...")
     webbrowser.open(auth_url)
 
     thread.join(timeout=120)
 
     if not auth_code:
-        print("ERROR: Did not receive authorization code within 2 minutes.")
+        print("Authorization timed out.")
         return
 
-    print("Authorization code received. Exchanging for tokens …")
+
+    print("Exchanging authorization code...")
 
     response = requests.post(
         "https://www.strava.com/oauth/token",
@@ -75,39 +99,29 @@ def main():
             "client_secret": CLIENT_SECRET,
             "code": auth_code,
             "grant_type": "authorization_code",
-            "refresh_token": STRAVA_REFRESH_TOKEN,
-
-        }
+        },
     )
+
     response.raise_for_status()
+
     tokens = response.json()
 
-    new_refresh_token = tokens["refresh_token"]
-    new_access_token = tokens["access_token"]
 
-    print("\n" + "=" * 55)
-    print("  New tokens received!")
-    print(f"  Refresh token : {new_refresh_token}")
-    print(f"  Access token  : {new_access_token}")
-    print("=" * 55)
-    print("\nUpdating REFRESH_TOKEN in strava.py automatically …")
+    print("\nSuccess!")
+    print("--------------------------------")
+    print("New refresh token:")
+    print(tokens["refresh_token"])
+    print("--------------------------------")
 
-    with open("strava.py", "r") as f:
-        content = f.read()
+    print(
+        """
+Copy this value into:
 
-    # Replace the old refresh token line
-    import re
-    updated = re.sub(
-        r'REFRESH_TOKEN\s*=\s*"[^"]*"',
-        f'REFRESH_TOKEN = "{new_refresh_token}"',
-        content
+.streamlit/secrets.toml
+
+STRAVA_REFRESH_TOKEN = "new_value_here"
+"""
     )
-
-    with open("strava.py", "w") as f:
-        f.write(updated)
-
-    print("Done! strava.py has been updated with your new refresh token.")
-    print("You can now run:  python3 strava.py")
 
 
 if __name__ == "__main__":
