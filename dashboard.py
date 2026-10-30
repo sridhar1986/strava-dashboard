@@ -219,6 +219,85 @@ with st.sidebar:
                 st.error(f"Sync failed: {e}")
 
     st.markdown("---")
+
+    # ── CSV upload (Strava bulk export) ────────────────────────────────────────
+    st.subheader("📂 Import from Export")
+    st.caption(
+        "Download your data from **Strava → Settings → My Account → "
+        "Download or Delete Your Account**, then upload `activities.csv` here."
+    )
+
+    uploaded = st.file_uploader("Drop activities.csv here", type="csv", label_visibility="collapsed")
+
+    if uploaded is not None:
+        import io
+        import pandas as pd
+
+        def _parse_export_df(raw_df: pd.DataFrame) -> list:
+            EXPORT_TO_API = {
+                "Activity ID":        "id",
+                "Activity Name":      "name",
+                "Activity Type":      "sport_type",
+                "Activity Gear":      "gear_id",
+                "Moving Time":        "moving_time",
+                "Elapsed Time.1":     "elapsed_time",
+                "Distance.1":         "distance",
+                "Max Speed":          "max_speed",
+                "Average Speed":      "average_speed",
+                "Elevation Gain":     "total_elevation_gain",
+                "Elevation High":     "elev_high",
+                "Elevation Low":      "elev_low",
+                "Average Cadence":    "average_cadence",
+                "Max Heart Rate.1":   "max_heartrate",
+                "Average Heart Rate": "average_heartrate",
+                "Calories":           "kilojoules",
+                "Relative Effort.1":  "suffer_score",
+            }
+            runs = raw_df[raw_df["Activity Type"].isin(["Run", "VirtualRun"])].copy()
+            runs["start_date"] = pd.to_datetime(
+                raw_df.loc[runs.index, "Activity Date"],
+                format="%b %d, %Y, %I:%M:%S %p", errors="coerce"
+            ).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            activities = []
+            for _, row in runs.iterrows():
+                a = {"start_date": row["start_date"], "type": row.get("Activity Type", "Run")}
+                for export_col, api_field in EXPORT_TO_API.items():
+                    val = row.get(export_col)
+                    a[api_field] = None if (pd.isna(val) if not isinstance(val, str) else val == "") else val
+                try:
+                    a["id"] = int(a["id"])
+                except (TypeError, ValueError):
+                    continue
+                for int_field in ("moving_time", "elapsed_time"):
+                    if a.get(int_field) is not None:
+                        try:
+                            a[int_field] = int(float(a[int_field]))
+                        except (TypeError, ValueError):
+                            a[int_field] = None
+                if a.get("average_cadence"):
+                    try:
+                        a["average_cadence"] = float(a["average_cadence"]) / 2
+                    except (TypeError, ValueError):
+                        pass
+                a["map"] = {"summary_polyline": ""}
+                a["workout_type"] = a["achievement_count"] = a["kudos_count"] = None
+                activities.append(a)
+            return activities, len(runs)
+
+        with st.spinner("Parsing and uploading…"):
+            try:
+                raw_df   = pd.read_csv(io.BytesIO(uploaded.read()))
+                acts, n_runs = _parse_export_df(raw_df)
+                added    = save_runs(acts)
+                st.success(f"✅ {added} run{'s' if added != 1 else ''} imported ({n_runs} found in file)!")
+                st.cache_data.clear()
+                st.session_state["pending_ai_analysis"] = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"Import failed: {e}")
+
+    st.markdown("---")
     st.header("Filters")
 
     years_available = sorted(df_all["year"].unique(), reverse=True)
